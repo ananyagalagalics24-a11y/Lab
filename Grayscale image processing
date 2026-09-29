@@ -1,0 +1,165 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
+from google.colab import files
+
+# Upload image
+uploaded = files.upload()
+filename = list(uploaded.keys())[0]
+
+# Read image and convert to grayscale
+img = Image.open(filename).convert('L')
+image = np.array(img)
+
+# Histogram
+hist, bins = np.histogram(image, bins=256, range=(0, 256))
+prob = hist / image.size
+
+global_mean = np.sum(np.arange(256) * prob)
+
+# GA parameters
+POP_SIZE = 20
+GENERATIONS = 30
+MUTATION_RATE = 0.1
+NUM_THRESHOLDS = 2
+
+
+# Fitness function
+def calculate_fitness(individual):
+
+    thresholds = sorted(list(set(individual)))
+
+    if len(thresholds) < NUM_THRESHOLDS:
+        return 0
+
+    bounds = [0] + thresholds + [256]
+
+    variance = 0
+
+    for i in range(len(bounds) - 1):
+
+        low = bounds[i]
+        high = bounds[i + 1]
+
+        w = np.sum(prob[low:high])
+
+        if w == 0:
+            continue
+
+        mean = np.sum(
+            np.arange(low, high) * prob[low:high]
+        ) / w
+
+        variance += w * (mean - global_mean) ** 2
+
+    return variance
+
+
+# Initial population
+population = [
+    np.random.randint(1, 255, NUM_THRESHOLDS).tolist()
+    for _ in range(POP_SIZE)
+]
+
+
+# Genetic Algorithm
+for generation in range(GENERATIONS):
+
+    # Calculate fitness
+    fitness_scores = [
+        calculate_fitness(ind)
+        for ind in population
+    ]
+
+    # Selection
+    total_fit = sum(fitness_scores)
+
+    if total_fit == 0:
+        probabilities = [1 / POP_SIZE] * POP_SIZE
+    else:
+        probabilities = [
+            f / total_fit for f in fitness_scores
+        ]
+
+    selected_indices = np.random.choice(
+        POP_SIZE,
+        size=POP_SIZE,
+        p=probabilities
+    )
+
+    population = [
+        population[i].copy()
+        for i in selected_indices
+    ]
+
+    # Crossover
+    next_generation = []
+
+    for i in range(0, POP_SIZE, 2):
+
+        parent1 = population[i]
+        parent2 = population[i + 1]
+
+        crossover_point = 1
+
+        child1 = (
+            parent1[:crossover_point] +
+            parent2[crossover_point:]
+        )
+
+        child2 = (
+            parent2[:crossover_point] +
+            parent1[crossover_point:]
+        )
+
+        next_generation.extend([child1, child2])
+
+    population = next_generation
+
+    # Mutation
+    for individual in population:
+
+        for gene in range(NUM_THRESHOLDS):
+
+            if np.random.rand() < MUTATION_RATE:
+                individual[gene] = np.random.randint(1, 255)
+
+
+# Find best solution
+fitness_scores = [
+    calculate_fitness(ind)
+    for ind in population
+]
+
+best_index = np.argmax(fitness_scores)
+
+best_thresholds = sorted(population[best_index])
+
+print("Optimal Thresholds:", best_thresholds)
+print("Maximum Fitness:", fitness_scores[best_index])
+
+
+# Apply the two thresholds
+t1, t2 = best_thresholds
+
+segmented = np.zeros_like(image)
+
+segmented[image <= t1] = 0
+segmented[(image > t1) & (image <= t2)] = 127
+segmented[image > t2] = 255
+
+
+# Display results
+plt.figure(figsize=(10, 5))
+
+plt.subplot(1, 2, 1)
+plt.imshow(image, cmap='gray')
+plt.title("Original Grayscale Image")
+plt.axis('off')
+
+plt.subplot(1, 2, 2)
+plt.imshow(segmented, cmap='gray')
+plt.title("GA Thresholded Image")
+plt.axis('off')
+
+plt.show()

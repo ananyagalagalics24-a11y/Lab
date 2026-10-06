@@ -1,0 +1,187 @@
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+
+image = Image.open("input.jpg").convert("L")
+img = np.array(image, dtype=np.float64)
+
+def enhance_image(img, contrast, brightness):
+
+    enhanced = contrast * img + brightness
+
+    # Keep pixel values between 0 and 255
+    enhanced = np.clip(enhanced, 0, 255)
+
+    return enhanced
+
+def fitness(img):
+
+    # Standard deviation represents
+    # the spread of pixel intensities.
+    # Higher spread = higher contrast.
+
+    contrast = np.std(img)
+
+    return contrast
+
+num_particles = 20
+num_iterations = 30
+
+w = 0.7
+c1 = 1.5
+c2 = 1.5
+
+# contrast range
+contrast_min = 0.5
+contrast_max = 3.0
+
+# brightness range
+brightness_min = -100
+brightness_max = 100
+
+# Each particle has:
+# [contrast, brightness]
+
+positions = np.zeros((num_particles, 2))
+
+positions[:, 0] = np.random.uniform(
+    contrast_min,
+    contrast_max,
+    num_particles
+)
+
+positions[:, 1] = np.random.uniform(
+    brightness_min,
+    brightness_max,
+    num_particles
+)
+
+velocities = np.zeros((num_particles, 2))
+
+particle_fitness = np.zeros(num_particles)
+
+for i in range(num_particles):
+
+    enhanced = enhance_image(
+        img,
+        positions[i, 0],
+        positions[i, 1]
+    )
+
+    particle_fitness[i] = fitness(enhanced)
+
+pBest_positions = positions.copy()
+pBest_fitness = particle_fitness.copy()
+
+best_particle = np.argmax(pBest_fitness)
+
+gBest_position = pBest_positions[best_particle].copy()
+gBest_fitness = pBest_fitness[best_particle]
+
+for iteration in range(num_iterations):
+
+    for i in range(num_particles):
+
+        r1 = np.random.random(2)
+        r2 = np.random.random(2)
+
+        # Update velocity
+        velocities[i] = (
+            w * velocities[i]
+            + c1 * r1 *
+            (pBest_positions[i] - positions[i])
+            + c2 * r2 *
+            (gBest_position - positions[i])
+        )
+
+        # Update position
+        positions[i] = positions[i] + velocities[i]
+
+        # Keep contrast inside limits
+        positions[i, 0] = np.clip(
+            positions[i, 0],
+            contrast_min,
+            contrast_max
+        )
+
+        # Keep brightness inside limits
+        positions[i, 1] = np.clip(
+            positions[i, 1],
+            brightness_min,
+            brightness_max
+        )
+
+        # Create enhanced image
+        enhanced = enhance_image(
+            img,
+            positions[i, 0],
+            positions[i, 1]
+        )
+
+        # Calculate fitness
+        current_fitness = fitness(enhanced)
+
+        # Update pBest
+        if current_fitness > pBest_fitness[i]:
+
+            pBest_positions[i] = positions[i].copy()
+
+            pBest_fitness[i] = current_fitness
+
+        # Update gBest
+        if current_fitness > gBest_fitness:
+
+            gBest_position = positions[i].copy()
+
+            gBest_fitness = current_fitness
+
+
+    print(
+        "Iteration:", iteration + 1,
+        "| Contrast:", round(gBest_position[0], 3),
+        "| Brightness:", round(gBest_position[1], 3),
+        "| Fitness:", round(gBest_fitness, 3)
+    )
+
+enhanced_image = enhance_image(
+    img,
+    gBest_position[0],
+    gBest_position[1]
+)
+
+enhanced_image = enhanced_image.astype(np.uint8)
+
+Image.fromarray(enhanced_image).save(
+    "pso_enhanced.jpg"
+)
+
+plt.figure(figsize=(10, 5))
+
+plt.subplot(1, 2, 1)
+plt.imshow(img, cmap="gray")
+plt.title("Original Image")
+plt.axis("off")
+
+plt.subplot(1, 2, 2)
+plt.imshow(enhanced_image, cmap="gray")
+plt.title("PSO Enhanced Image")
+plt.axis("off")
+
+plt.show()
+
+print("\n----- FINAL RESULT -----")
+
+print(
+    "Best Contrast:",
+    round(gBest_position[0], 3)
+)
+
+print(
+    "Best Brightness:",
+    round(gBest_position[1], 3)
+)
+
+print(
+    "Best Fitness:",
+    round(gBest_fitness, 3)
+)

@@ -1,0 +1,108 @@
+import random
+
+# Road network: intersections and travel time in minutes
+roads = {
+    "A": {"B": 4, "C": 2},
+    "B": {"A": 4, "D": 5, "E": 2},
+    "C": {"A": 2, "D": 8, "E": 3},
+    "D": {"B": 5, "C": 8, "F": 2},
+    "E": {"B": 2, "C": 3, "F": 4},
+    "F": {"D": 2, "E": 4}
+}
+
+# ACO parameters
+alpha = 1.0 # Pheromone importance
+beta = 2.0 # Heuristic importance
+rho = 0.5 # Evaporation rate
+num_ants = 10
+iterations = 50
+Q = 100 # Pheromone deposit constant
+
+start = "A"
+goal = "F"
+
+# Initialize pheromone on every road
+pheromone = {}
+for i in roads:
+    for j in roads[i]:
+        pheromone[(i, j)] = 1.0
+
+
+# Find a route using one ant
+def build_route():
+    current = start
+    route = [current]
+    visited = {current}
+    total_time = 0
+
+    while current != goal:
+        candidates = []
+
+        for nxt, time in roads[current].items():
+            if nxt not in visited:
+                tau = pheromone[(current, nxt)]
+                eta = 1 / time
+
+                # Path-selection formula
+                weight = (tau ** alpha) * (eta ** beta)
+                candidates.append((nxt, time, weight))
+
+        if not candidates:
+            return None, float("inf")
+
+        # Select next intersection probabilistically
+        total_weight = sum(item[2] for item in candidates)
+        probabilities = [
+            item[2] / total_weight for item in candidates
+        ]
+
+        selected = random.choices(
+            candidates, weights=probabilities, k=1
+        )[0]
+
+        nxt, time, _ = selected
+        route.append(nxt)
+        visited.add(nxt)
+        total_time += time
+        current = nxt
+
+    return route, total_time
+
+
+# Main ACO algorithm
+best_route = None
+best_time = float("inf")
+
+for iteration in range(iterations):
+
+    ant_solutions = []
+
+    # Each ant constructs a route
+    for ant in range(num_ants):
+        route, travel_time = build_route()
+
+        if route is not None:
+            ant_solutions.append((route, travel_time))
+
+            if travel_time < best_time:
+                best_route = route
+                best_time = travel_time
+
+    # Evaporate old pheromones
+    for edge in pheromone:
+        pheromone[edge] *= (1 - rho)
+
+    # Deposit pheromones based on route quality
+    for route, travel_time in ant_solutions:
+        deposit = Q / travel_time
+
+        for i in range(len(route) - 1):
+            edge = (route[i], route[i + 1])
+            pheromone[edge] += deposit
+
+            # Roads are bidirectional
+            reverse_edge = (route[i + 1], route[i])
+            pheromone[reverse_edge] += deposit
+
+print("Best route:", " -> ".join(best_route))
+print("Estimated travel time:", best_time, "minutes")

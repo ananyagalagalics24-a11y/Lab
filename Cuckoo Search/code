@@ -1,0 +1,157 @@
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+
+# Forest parameters
+FOREST_SIZE = 100
+NUM_SENSORS = 10
+SENSOR_RADIUS = 20
+
+# Cuckoo Search parameters
+N = 20
+MAX_ITER = 100
+PA = 0.25
+BETA = 1.5
+ALPHA = 0.01
+
+# Generate forest monitoring points
+x = np.linspace(0, FOREST_SIZE, 50)
+y = np.linspace(0, FOREST_SIZE, 50)
+X, Y = np.meshgrid(x, y)
+forest_points = np.column_stack((X.ravel(), Y.ravel()))
+
+
+# Fitness function
+def fitness(nest):
+    distances = np.sqrt(
+        (forest_points[:, 0, None] - nest[:, 0]) ** 2 +
+        (forest_points[:, 1, None] - nest[:, 1]) ** 2
+    )
+
+    covered = np.any(distances <= SENSOR_RADIUS, axis=1)
+
+    return np.sum(covered) / len(forest_points)
+
+
+# Generate random sensor positions
+def create_nest():
+    return np.random.uniform(
+        0, FOREST_SIZE, (NUM_SENSORS, 2)
+    )
+
+
+# Levy flight using Mantegna's method
+def levy_flight():
+    sigma = (
+        math.gamma(1 + BETA) *
+        np.sin(np.pi * BETA / 2) /
+        (
+            math.gamma((1 + BETA) / 2) *
+            BETA *
+            2 ** ((BETA - 1) / 2)
+        )
+    ) ** (1 / BETA)
+
+    u = np.random.normal(0, sigma)
+    v = np.random.normal(0, 1)
+
+    return u / (abs(v) ** (1 / BETA) + 1e-10)
+
+
+# Initialize nests
+nests = [create_nest() for _ in range(N)]
+
+# Evaluate fitness
+scores = [fitness(nest) for nest in nests]
+
+best_index = np.argmax(scores)
+best_nest = nests[best_index].copy()
+best_score = scores[best_index]
+
+
+# Cuckoo Search
+for iteration in range(MAX_ITER):
+
+    # Generate new solutions using Levy flight
+    for i in range(N):
+        new_nest = nests[i] + ALPHA * np.array([
+            [levy_flight(), levy_flight()]
+            for _ in range(NUM_SENSORS)
+        ])
+
+        new_nest = np.clip(new_nest, 0, FOREST_SIZE)
+
+        j = random.randint(0, N - 1)
+
+        new_score = fitness(new_nest)
+
+        if new_score > scores[j]:
+            nests[j] = new_nest
+            scores[j] = new_score
+
+    # Abandon worst nests
+    num_abandon = int(PA * N)
+
+    worst_indices = np.argsort(scores)[:num_abandon]
+
+    for i in worst_indices:
+        nests[i] = create_nest()
+        scores[i] = fitness(nests[i])
+
+    # Update best solution
+    best_index = np.argmax(scores)
+
+    if scores[best_index] > best_score:
+        best_score = scores[best_index]
+        best_nest = nests[best_index].copy()
+
+    print(
+        "Iteration:", iteration + 1,
+        "Coverage:", round(best_score * 100, 2), "%"
+    )
+
+
+# Display results
+print("\nBest Sensor Positions:")
+for i, position in enumerate(best_nest):
+    print(
+        "Sensor", i + 1,
+        ":", np.round(position, 2)
+    )
+
+print("Maximum Forest Coverage:",
+      round(best_score * 100, 2), "%")
+
+
+# Plot sensor positions and coverage
+plt.figure(figsize=(8, 8))
+
+plt.scatter(
+    forest_points[:, 0],
+    forest_points[:, 1],
+    c="lightgreen",
+    s=5,
+    label="Forest"
+)
+
+for i, (sx, sy) in enumerate(best_nest):
+    circle = plt.Circle(
+        (sx, sy),
+        SENSOR_RADIUS,
+        fill=False,
+        color="blue"
+    )
+    plt.gca().add_patch(circle)
+    plt.scatter(sx, sy, color="red")
+    plt.text(sx + 1, sy + 1, str(i + 1))
+
+plt.xlim(0, FOREST_SIZE)
+plt.ylim(0, FOREST_SIZE)
+plt.xlabel("X Coordinate")
+plt.ylabel("Y Coordinate")
+plt.title("Cuckoo Search - Forest Fire Sensor Placement")
+plt.legend()
+plt.grid()
+plt.show()
+

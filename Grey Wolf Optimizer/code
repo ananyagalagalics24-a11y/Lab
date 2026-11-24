@@ -1,0 +1,261 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# PCB parameters
+BOARD_SIZE = 100
+START = (0, 50)
+GOAL = (100, 50)
+
+# Rectangular obstacles: xmin, ymin, xmax, ymax
+obstacles = [
+    (20, 35, 35, 65),
+    (45, 20, 60, 45),
+    (70, 55, 85, 80)
+]
+
+# GWO parameters
+NUM_WOLVES = 20
+MAX_ITER = 100
+DIM = 19
+LOWER = 0
+UPPER = 100
+
+OBSTACLE_PENALTY = 1000
+BEND_PENALTY = 2
+GRID = 5
+
+
+# Generate routing path from wolf position
+def create_path(position):
+    y_values = np.clip(
+        np.round(position / GRID) * GRID,
+        LOWER, UPPER
+    )
+
+    points = [START]
+    current_x, current_y = START
+
+    for i, y in enumerate(y_values):
+        x = (i + 1) * GRID
+
+        # Horizontal movement
+        points.append((x, current_y))
+
+        # Vertical movement
+        points.append((x, int(y)))
+
+        current_x, current_y = x, int(y)
+
+    # Connect to destination
+    points.append((GOAL[0], current_y))
+    points.append(GOAL)
+
+    return points
+
+
+# Check whether a segment intersects an obstacle
+def intersects(p1, p2, rect):
+    xmin, ymin, xmax, ymax = rect
+    x1, y1 = p1
+    x2, y2 = p2
+
+    if y1 == y2:
+        return (
+            ymin <= y1 <= ymax and
+            max(min(x1, x2), xmin) <=
+            min(max(x1, x2), xmax)
+        )
+
+    if x1 == x2:
+        return (
+            xmin <= x1 <= xmax and
+            max(min(y1, y2), ymin) <=
+            min(max(y1, y2), ymax)
+        )
+
+    return False
+
+
+# Fitness function
+def fitness(position):
+    path = create_path(position)
+
+    length = 0
+    obstacle_count = 0
+    bends = 0
+    directions = []
+
+    for i in range(len(path) - 1):
+        p1 = path[i]
+        p2 = path[i + 1]
+
+        distance = (
+            abs(p2[0] - p1[0]) +
+            abs(p2[1] - p1[1])
+        )
+
+        length += distance
+
+        if p1[0] != p2[0] or p1[1] != p2[1]:
+            direction = (
+                "H" if p1[1] == p2[1] else "V"
+            )
+            directions.append(direction)
+
+        for rect in obstacles:
+            if intersects(p1, p2, rect):
+                obstacle_count += 1
+
+    for i in range(1, len(directions)):
+        if directions[i] != directions[i - 1]:
+            bends += 1
+
+    return (
+        length +
+        OBSTACLE_PENALTY * obstacle_count +
+        BEND_PENALTY * bends
+    )
+
+
+# Initialize wolves
+wolves = np.random.uniform(
+    LOWER, UPPER, (NUM_WOLVES, DIM)
+)
+
+alpha = None
+beta = None
+delta = None
+
+alpha_score = float("inf")
+
+# Grey Wolf Optimization
+for iteration in range(MAX_ITER):
+
+    scores = np.array([
+        fitness(wolf) for wolf in wolves
+    ])
+
+    # Sort wolves based on fitness
+    sorted_indices = np.argsort(scores)
+
+    alpha = wolves[sorted_indices[0]].copy()
+    beta = wolves[sorted_indices[1]].copy()
+    delta = wolves[sorted_indices[2]].copy()
+
+    alpha_score = scores[sorted_indices[0]]
+
+    # Decrease a from 2 to 0
+    a = 2 - 2 * iteration / MAX_ITER
+
+    # Update wolf positions
+    for i in range(NUM_WOLVES):
+
+        r1 = np.random.random(DIM)
+        r2 = np.random.random(DIM)
+
+        A1 = 2 * a * r1 - a
+        C1 = 2 * r2
+
+        D_alpha = abs(C1 * alpha - wolves[i])
+        X1 = alpha - A1 * D_alpha
+
+        r1 = np.random.random(DIM)
+        r2 = np.random.random(DIM)
+
+        A2 = 2 * a * r1 - a
+        C2 = 2 * r2
+
+        D_beta = abs(C2 * beta - wolves[i])
+        X2 = beta - A2 * D_beta
+
+        r1 = np.random.random(DIM)
+        r2 = np.random.random(DIM)
+
+        A3 = 2 * a * r1 - a
+        C3 = 2 * r2
+
+        D_delta = abs(C3 * delta - wolves[i])
+        X3 = delta - A3 * D_delta
+
+        # Update position
+        wolves[i] = (X1 + X2 + X3) / 3
+
+        wolves[i] = np.clip(
+            wolves[i], LOWER, UPPER
+        )
+
+    print(
+        "Iteration:", iteration + 1,
+        "Best Fitness:", round(alpha_score, 2)
+    )
+
+
+# Get best routing path
+best_path = create_path(alpha)
+
+print("\nBest PCB Routing Path:")
+print(best_path)
+
+print("Minimum Fitness:", alpha_score)
+
+# Check obstacle intersections
+total_collisions = sum(
+    intersects(best_path[i], best_path[i + 1], rect)
+    for i in range(len(best_path) - 1)
+    for rect in obstacles
+)
+
+if total_collisions == 0:
+    print("Routing Status: Valid path found")
+else:
+    print("Routing Status: Obstacles still present")
+
+
+# Plot PCB routing
+plt.figure(figsize=(9, 7))
+
+# Draw PCB boundary
+plt.plot(
+    [0, 100, 100, 0, 0],
+    [0, 0, 100, 100, 0],
+    color="black"
+)
+
+# Draw obstacles
+for rect in obstacles:
+    xmin, ymin, xmax, ymax = rect
+
+    plt.fill(
+        [xmin, xmax, xmax, xmin],
+        [ymin, ymin, ymax, ymax],
+        color="gray",
+        alpha=0.7
+    )
+
+# Draw routing path
+px = [p[0] for p in best_path]
+py = [p[1] for p in best_path]
+
+plt.plot(
+    px, py,
+    color="blue",
+    linewidth=2,
+    marker="o",
+    markersize=3,
+    label="Optimized Route"
+)
+
+plt.scatter(*START, color="green", s=100,
+            label="Start")
+
+plt.scatter(*GOAL, color="red", s=100,
+            label="Goal")
+
+plt.xlabel("X Coordinate")
+plt.ylabel("Y Coordinate")
+plt.title("PCB Routing Optimization using GWO")
+plt.xlim(0, 100)
+plt.ylim(0, 100)
+plt.legend()
+plt.grid()
+plt.show()
